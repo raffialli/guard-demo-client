@@ -69,6 +69,17 @@ export interface RagSearchResponse {
 }
 
 // Tool types
+export interface MCPCapabilities {
+  id?: number;
+  tool_name?: string;
+  server_name?: string;
+  session_info?: any;
+  discovery_results?: any;
+  last_discovered?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface Tool {
   id: number;
   name: string;
@@ -77,6 +88,7 @@ export interface Tool {
   type: string;
   enabled: boolean;
   config_json?: any;
+  mcp_capabilities?: MCPCapabilities;
   created_at: string;
   updated_at: string;
 }

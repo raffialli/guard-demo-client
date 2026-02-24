@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Settings, Play, Trash2, Search } from 'lucide-react';
-import { Tool, ToolCreate } from '../types';
+import { Plus, Settings, Play, Trash2, Search, ShieldCheck, ShieldAlert, Activity } from 'lucide-react';
+import { Tool, ToolCreate, AppConfig } from '../types';
 import { apiService } from '../services/api';
 
 const ToolManager: React.FC = () => {
@@ -10,6 +10,8 @@ const ToolManager: React.FC = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingTool, setEditingTool] = useState<Tool | null>(null);
   const [testResults, setTestResults] = useState<Record<number, any>>({});
+  const [testingTools, setTestingTools] = useState<Record<number, boolean>>({});
+  const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
 
   const [newTool, setNewTool] = useState<ToolCreate>({
     name: '',
@@ -22,6 +24,7 @@ const ToolManager: React.FC = () => {
 
   useEffect(() => {
     loadTools();
+    loadConfig();
   }, []);
 
   const loadTools = async () => {
@@ -33,6 +36,15 @@ const ToolManager: React.FC = () => {
       console.error('Failed to load tools:', error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadConfig = async () => {
+    try {
+      const config = await apiService.getConfig();
+      setAppConfig(config);
+    } catch (error) {
+      console.error('Failed to load config:', error);
     }
   };
 
@@ -83,12 +95,16 @@ const ToolManager: React.FC = () => {
   };
 
   const handleTestTool = async (toolId: number) => {
+    setTestingTools(prev => ({ ...prev, [toolId]: true }));
     try {
       const result = await apiService.testTool(toolId, { test: true });
       setTestResults(prev => ({ ...prev, [toolId]: result }));
+      await loadTools();
     } catch (error) {
       console.error('Failed to test tool:', error);
       setTestResults(prev => ({ ...prev, [toolId]: { error: 'Test failed' } }));
+    } finally {
+      setTestingTools(prev => ({ ...prev, [toolId]: false }));
     }
   };
 
@@ -96,6 +112,20 @@ const ToolManager: React.FC = () => {
     tool.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     tool.description?.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const mcpTools = filteredTools.filter(t => t.type === 'mcp');
+
+  const getDiscoveredToolCount = (tool: Tool): number => {
+    return tool.mcp_capabilities?.discovery_results?.tools_list_params_0?.response?.result?.tools?.length || 0;
+  };
+
+  const getEndpointStatus = (tool: Tool): 'healthy' | 'unknown' | 'error' => {
+    const latest = testResults[tool.id];
+    if (latest?.status === 'success') return 'healthy';
+    if (latest?.status === 'error' || latest?.error) return 'error';
+    if (tool.mcp_capabilities?.last_discovered) return 'healthy';
+    return 'unknown';
+  };
 
   return (
     <div className="space-y-6">
@@ -118,6 +148,48 @@ const ToolManager: React.FC = () => {
           <Plus className="w-4 h-4" />
           <span>Add Tool</span>
         </button>
+      </div>
+
+      {/* MCP Health + Security Summary */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-600">MCP Endpoints</span>
+            <Activity className="w-4 h-4 text-blue-500" />
+          </div>
+          <p className="text-2xl font-semibold text-gray-900 mt-1">{mcpTools.length}</p>
+          <p className="text-xs text-gray-500 mt-1">Configured MCP tools</p>
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-600">Lakera Guard</span>
+            {appConfig?.lakera_enabled ? (
+              <ShieldCheck className="w-4 h-4 text-green-500" />
+            ) : (
+              <ShieldAlert className="w-4 h-4 text-red-500" />
+            )}
+          </div>
+          <p className="text-2xl font-semibold text-gray-900 mt-1">
+            {appConfig?.lakera_enabled ? 'ON' : 'OFF'}
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            {appConfig?.lakera_enabled
+              ? `Mode: ${appConfig.lakera_blocking_mode ? 'Blocking' : 'Monitoring'}`
+              : 'Tool output screening disabled'}
+          </p>
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-600">Discoverable MCP Tools</span>
+            <Play className="w-4 h-4 text-purple-500" />
+          </div>
+          <p className="text-2xl font-semibold text-gray-900 mt-1">
+            {mcpTools.reduce((sum, tool) => sum + getDiscoveredToolCount(tool), 0)}
+          </p>
+          <p className="text-xs text-gray-500 mt-1">From latest capability discovery</p>
+        </div>
       </div>
 
       {/* Add Tool Form */}
@@ -213,14 +285,39 @@ const ToolManager: React.FC = () => {
                   {tool.endpoint && (
                     <p className="text-xs text-gray-500 mt-1">{tool.endpoint}</p>
                   )}
+
+                  {tool.type === 'mcp' && (
+                    <div className="mt-2 space-y-1 text-xs">
+                      <p>
+                        <span className="text-gray-500">Endpoint status:</span>{' '}
+                        <span className={
+                          getEndpointStatus(tool) === 'healthy' ? 'text-green-700' :
+                          getEndpointStatus(tool) === 'error' ? 'text-red-700' : 'text-gray-600'
+                        }>
+                          {getEndpointStatus(tool) === 'healthy' ? 'Alive' :
+                           getEndpointStatus(tool) === 'error' ? 'Error' : 'Unknown'}
+                        </span>
+                      </p>
+                      <p>
+                        <span className="text-gray-500">Discovered tools:</span> {getDiscoveredToolCount(tool)}
+                      </p>
+                      <p>
+                        <span className="text-gray-500">Last discovery:</span>{' '}
+                        {tool.mcp_capabilities?.last_discovered
+                          ? new Date(tool.mcp_capabilities.last_discovered).toLocaleString()
+                          : 'Never'}
+                      </p>
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center space-x-2">
                   <button
                     onClick={() => handleTestTool(tool.id)}
-                    className="p-2 text-gray-400 hover:text-gray-600"
-                    title="Test Tool"
+                    disabled={!!testingTools[tool.id]}
+                    className="p-2 text-gray-400 hover:text-gray-600 disabled:opacity-50"
+                    title={tool.type === 'mcp' ? 'Re-discover capabilities' : 'Test Tool'}
                   >
-                    <Play className="w-4 h-4" />
+                    <Play className={`w-4 h-4 ${testingTools[tool.id] ? 'animate-pulse' : ''}`} />
                   </button>
                   <button
                     onClick={() => setEditingTool(editingTool?.id === tool.id ? null : tool)}

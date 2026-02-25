@@ -22,6 +22,7 @@ services:
   mcp-filesystem:
     image: node:20-alpine
     container_name: mcp-filesystem
+    restart: unless-stopped
     working_dir: /work
     command: >
       sh -lc "npx -y supergateway
@@ -33,6 +34,7 @@ services:
   mcp-fetch:
     image: node:20-alpine
     container_name: mcp-fetch
+    restart: unless-stopped
     command: >
       sh -lc "npx -y supergateway
       --stdio 'npx -y @modelcontextprotocol/server-memory'
@@ -41,6 +43,7 @@ services:
   mcp-time:
     image: node:20-alpine
     container_name: mcp-time
+    restart: unless-stopped
     command: >
       sh -lc "npx -y supergateway
       --stdio 'npx -y @modelcontextprotocol/server-everything'

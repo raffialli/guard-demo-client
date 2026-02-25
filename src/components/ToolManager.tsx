@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Settings, Play, Trash2, Search, ShieldCheck, ShieldAlert, Activity } from 'lucide-react';
+import { Plus, Settings, Play, Trash2, Search, ShieldCheck, ShieldAlert, Activity, ChevronDown, ChevronUp } from 'lucide-react';
 import { Tool, ToolCreate, AppConfig } from '../types';
 import { apiService } from '../services/api';
 
@@ -11,6 +11,7 @@ const ToolManager: React.FC = () => {
   const [editingTool, setEditingTool] = useState<Tool | null>(null);
   const [testResults, setTestResults] = useState<Record<number, any>>({});
   const [testingTools, setTestingTools] = useState<Record<number, boolean>>({});
+  const [expandedTools, setExpandedTools] = useState<Record<number, boolean>>({});
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
 
   const [newTool, setNewTool] = useState<ToolCreate>({
@@ -115,8 +116,18 @@ const ToolManager: React.FC = () => {
 
   const mcpTools = filteredTools.filter(t => t.type === 'mcp');
 
+  const getDiscoveredTools = (tool: Tool): any[] => {
+    const stored = tool.mcp_capabilities?.discovery_results?.tools_list_params_0?.response?.result?.tools;
+    if (Array.isArray(stored)) return stored;
+
+    const latest = testResults[tool.id]?.discovery?.discovery_results?.tools_list_params_0?.response?.result?.tools;
+    if (Array.isArray(latest)) return latest;
+
+    return [];
+  };
+
   const getDiscoveredToolCount = (tool: Tool): number => {
-    return tool.mcp_capabilities?.discovery_results?.tools_list_params_0?.response?.result?.tools?.length || 0;
+    return getDiscoveredTools(tool).length;
   };
 
   const getEndpointStatus = (tool: Tool): 'healthy' | 'unknown' | 'error' => {
@@ -319,6 +330,18 @@ const ToolManager: React.FC = () => {
                   >
                     <Play className={`w-4 h-4 ${testingTools[tool.id] ? 'animate-pulse' : ''}`} />
                   </button>
+                  {tool.type === 'mcp' && (
+                    <button
+                      onClick={() => setExpandedTools(prev => ({ ...prev, [tool.id]: !prev[tool.id] }))}
+                      className="px-2 py-1 text-xs text-primary-700 bg-primary-50 hover:bg-primary-100 rounded border border-primary-200"
+                      title="Show discovered tools"
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        Show tools
+                        {expandedTools[tool.id] ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                      </span>
+                    </button>
+                  )}
                   <button
                     onClick={() => setEditingTool(editingTool?.id === tool.id ? null : tool)}
                     className="p-2 text-gray-400 hover:text-gray-600"
@@ -408,11 +431,35 @@ const ToolManager: React.FC = () => {
                 </div>
               )}
 
-              {/* Test Result */}
+              {/* Discovered Tools (human-friendly view) */}
+              {tool.type === 'mcp' && expandedTools[tool.id] && (
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <h4 className="text-sm font-medium text-gray-900 mb-2">
+                    Discovered tools ({getDiscoveredToolCount(tool)})
+                  </h4>
+                  {getDiscoveredToolCount(tool) === 0 ? (
+                    <p className="text-xs text-gray-600">No tools discovered yet. Click Play to run discovery.</p>
+                  ) : (
+                    <div className="space-y-2 max-h-64 overflow-auto">
+                      {getDiscoveredTools(tool).map((t: any, idx: number) => (
+                        <div key={`${tool.id}-${idx}`} className="p-2 bg-gray-50 border border-gray-200 rounded">
+                          <p className="text-sm font-medium text-gray-900">{t.name || `tool_${idx + 1}`}</p>
+                          {t.description && <p className="text-xs text-gray-600 mt-1">{t.description}</p>}
+                          <p className="text-xs text-gray-500 mt-1">
+                            Params: {Object.keys(t.inputSchema?.properties || {}).length}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Raw Test Result */}
               {testResults[tool.id] && (
                 <div className="mt-4 pt-4 border-t border-gray-200">
-                  <h4 className="text-sm font-medium text-gray-900 mb-2">Test Result</h4>
-                  <pre className="bg-gray-100 p-3 rounded text-xs overflow-x-auto">
+                  <h4 className="text-sm font-medium text-gray-900 mb-2">Raw test result (JSON)</h4>
+                  <pre className="bg-gray-100 p-3 rounded text-xs overflow-x-auto max-h-64">
                     {JSON.stringify(testResults[tool.id], null, 2)}
                   </pre>
                 </div>

@@ -63,7 +63,7 @@ On Linux, add `--add-host=host.docker.internal:host-gateway` if you need to reac
 
 ## Demo MCP Stack (one command)
 
-For a quick SE-ready demo with bundled MCP servers (filesystem + fetch + time), use:
+For a quick SE-ready demo with bundled MCP servers (filesystem + memory + everything), use:
 
 ```bash
 docker compose -f docker-compose.demo.yml up --build

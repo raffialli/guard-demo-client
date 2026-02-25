@@ -11,6 +11,7 @@ import io
 import logging
 import sys
 from datetime import datetime
+import asyncio
 
 # Configure logging to prevent blocking I/O issues
 logging.basicConfig(
@@ -810,24 +811,43 @@ async def test_tool(tool_id: int, db: Session = Depends(get_db)):
     lakera_blocking_mode = config.lakera_blocking_mode if config and config.lakera_enabled else True
     
     if tool.type in ["mcp", "http"]:
-        # For MCP tools, try to discover capabilities
-        try:
-            discovery_result = await discover_mcp_tool_capabilities_sync({
-                "name": tool.name,
-                "endpoint": tool.endpoint
-            }, lakera_api_key=lakera_api_key, lakera_project_id=lakera_project_id, lakera_blocking_mode=lakera_blocking_mode)
-            # Store the discovered capabilities
-            await store_capabilities(tool.id, tool.name, discovery_result, db)
-            return {
-                "status": "success",
-                "message": f"MCP tool {tool.name} discovery completed",
-                "discovery": discovery_result
-            }
-        except Exception as e:
-            return {
-                "status": "error",
-                "message": f"MCP tool discovery failed: {str(e)}"
-            }
+        # For MCP tools, try to discover capabilities (with light retry for startup races)
+        attempts = 3
+        last_error = None
+        for attempt in range(1, attempts + 1):
+            try:
+                discovery_result = await discover_mcp_tool_capabilities_sync({
+                    "name": tool.name,
+                    "endpoint": tool.endpoint
+                }, lakera_api_key=lakera_api_key, lakera_project_id=lakera_project_id, lakera_blocking_mode=lakera_blocking_mode)
+
+                # If discovery returned an explicit MCP connection error, retry briefly
+                if discovery_result.get("status") == "error" and "MCP connection failed" in str(discovery_result.get("error", "")) and attempt < attempts:
+                    last_error = discovery_result.get("error")
+                    await asyncio.sleep(1.5 * attempt)
+                    continue
+
+                # Store the discovered capabilities
+                await store_capabilities(tool.id, tool.name, discovery_result, db)
+                return {
+                    "status": "success",
+                    "message": f"MCP tool {tool.name} discovery completed",
+                    "discovery": discovery_result
+                }
+            except Exception as e:
+                last_error = str(e)
+                if attempt < attempts:
+                    await asyncio.sleep(1.5 * attempt)
+                else:
+                    return {
+                        "status": "error",
+                        "message": f"MCP tool discovery failed after {attempts} attempts: {last_error}"
+                    }
+
+        return {
+            "status": "error",
+            "message": f"MCP tool discovery failed: {last_error}"
+        }
     else:
         # For HTTP tools, test basic connectivity
         import httpx

@@ -35,7 +35,7 @@ services:
     container_name: mcp-fetch
     command: >
       sh -lc "npx -y supergateway
-      --stdio 'npx -y @modelcontextprotocol/server-fetch'
+      --stdio 'npx -y @modelcontextprotocol/server-memory'
       --port 8202"
 
   mcp-time:
@@ -43,5 +43,5 @@ services:
     container_name: mcp-time
     command: >
       sh -lc "npx -y supergateway
-      --stdio 'npx -y @modelcontextprotocol/server-time'
+      --stdio 'npx -y @modelcontextprotocol/server-everything'
       --port 8203"

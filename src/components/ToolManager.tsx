@@ -12,6 +12,7 @@ const ToolManager: React.FC = () => {
   const [testResults, setTestResults] = useState<Record<number, any>>({});
   const [testingTools, setTestingTools] = useState<Record<number, boolean>>({});
   const [expandedTools, setExpandedTools] = useState<Record<number, boolean>>({});
+  const [showRawResult, setShowRawResult] = useState<Record<number, boolean>>({});
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
 
   const [newTool, setNewTool] = useState<ToolCreate>({
@@ -201,6 +202,61 @@ const ToolManager: React.FC = () => {
           </p>
           <p className="text-xs text-gray-500 mt-1">From latest capability discovery</p>
         </div>
+      </div>
+
+      {/* Discovered tools by MCP server (demo-friendly list) */}
+      <div className="bg-white border border-gray-200 rounded-lg p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-900">Discovered MCP Tools by Server</h3>
+          <span className="text-xs text-gray-500">Use Play to refresh discovery</span>
+        </div>
+
+        {mcpTools.length === 0 ? (
+          <p className="text-sm text-gray-600">No MCP servers configured yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {mcpTools.map((tool) => {
+              const discovered = getDiscoveredTools(tool);
+              const isOpen = !!expandedTools[tool.id];
+              return (
+                <div key={`summary-${tool.id}`} className="border border-gray-200 rounded-lg">
+                  <button
+                    onClick={() => setExpandedTools(prev => ({ ...prev, [tool.id]: !prev[tool.id] }))}
+                    className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-gray-50"
+                  >
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{tool.name}</p>
+                      <p className="text-xs text-gray-600">{discovered.length} tools discovered</p>
+                    </div>
+                    {isOpen ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
+                  </button>
+
+                  {isOpen && (
+                    <div className="px-3 pb-3 border-t border-gray-100">
+                      {discovered.length === 0 ? (
+                        <p className="text-xs text-gray-600 mt-2">No tools yet. Click Play on this MCP server.</p>
+                      ) : (
+                        <ul className="mt-2 space-y-1">
+                          {discovered.map((t: any, idx: number) => (
+                            <li key={`${tool.id}-summary-tool-${idx}`} className="text-sm text-gray-800 flex items-start gap-2">
+                              <span className="text-gray-400">•</span>
+                              <div>
+                                <span className="font-medium">{t.name || `tool_${idx + 1}`}</span>
+                                {t.description && (
+                                  <span className="text-gray-600"> — {t.description}</span>
+                                )}
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Add Tool Form */}
@@ -455,13 +511,22 @@ const ToolManager: React.FC = () => {
                 </div>
               )}
 
-              {/* Raw Test Result */}
+              {/* Raw Test Result (debug) */}
               {testResults[tool.id] && (
                 <div className="mt-4 pt-4 border-t border-gray-200">
-                  <h4 className="text-sm font-medium text-gray-900 mb-2">Raw test result (JSON)</h4>
-                  <pre className="bg-gray-100 p-3 rounded text-xs overflow-x-auto max-h-64">
-                    {JSON.stringify(testResults[tool.id], null, 2)}
-                  </pre>
+                  <button
+                    onClick={() => setShowRawResult(prev => ({ ...prev, [tool.id]: !prev[tool.id] }))}
+                    className="text-xs text-gray-600 hover:text-gray-900 inline-flex items-center gap-1"
+                  >
+                    {showRawResult[tool.id] ? 'Hide debug JSON' : 'Show debug JSON'}
+                    {showRawResult[tool.id] ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  </button>
+
+                  {showRawResult[tool.id] && (
+                    <pre className="mt-2 bg-gray-100 p-3 rounded text-xs overflow-x-auto max-h-64">
+                      {JSON.stringify(testResults[tool.id], null, 2)}
+                    </pre>
+                  )}
                 </div>
               )}
             </div>

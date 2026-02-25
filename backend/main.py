@@ -22,7 +22,7 @@ logging.basicConfig(
 )
 
 from sqlalchemy import text
-from .database import get_db, engine
+from .database import get_db, engine, SessionLocal
 from .models import Base, AppConfig, Tool, RagSource, MCPToolCapabilities, DemoPrompt
 from .schemas import (
     AppConfigResponse, AppConfigUpdate,
@@ -64,6 +64,54 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.on_event("startup")
+async def startup_seed_demo_tools():
+    """Optionally seed demo MCP tools for docker-compose demo stack."""
+    if os.getenv("DEMO_MCP_AUTOCONFIG", "false").lower() not in {"1", "true", "yes", "on"}:
+        return
+
+    demo_tools = [
+        {
+            "name": "filesystem_demo",
+            "description": "Demo MCP filesystem server",
+            "endpoint": os.getenv("MCP_FILESYSTEM_ENDPOINT", "http://mcp-filesystem:8201/sse"),
+            "type": "mcp",
+        },
+        {
+            "name": "fetch_demo",
+            "description": "Demo MCP fetch/http server",
+            "endpoint": os.getenv("MCP_FETCH_ENDPOINT", "http://mcp-fetch:8202/sse"),
+            "type": "mcp",
+        },
+        {
+            "name": "time_demo",
+            "description": "Demo MCP time utility server",
+            "endpoint": os.getenv("MCP_TIME_ENDPOINT", "http://mcp-time:8203/sse"),
+            "type": "mcp",
+        },
+    ]
+
+    db = SessionLocal()
+    try:
+        for tool in demo_tools:
+            existing = db.query(Tool).filter(Tool.name == tool["name"]).first()
+            if not existing:
+                db.add(Tool(
+                    name=tool["name"],
+                    description=tool["description"],
+                    endpoint=tool["endpoint"],
+                    type=tool["type"],
+                    enabled=True,
+                    config_json={"seeded_by": "demo_mcp_autoconfig"}
+                ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"⚠️ Demo MCP autoconfig seed failed: {e}")
+    finally:
+        db.close()
+
 
 @app.get("/")
 async def root():

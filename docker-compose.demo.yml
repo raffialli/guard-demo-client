@@ -1,0 +1,47 @@
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: guard-demo-app
+    environment:
+      DEMO_MCP_AUTOCONFIG: "true"
+      MCP_FILESYSTEM_ENDPOINT: "http://mcp-filesystem:8201/sse"
+      MCP_FETCH_ENDPOINT: "http://mcp-fetch:8202/sse"
+      MCP_TIME_ENDPOINT: "http://mcp-time:8203/sse"
+    ports:
+      - "3000:3000"
+      - "8000:8000"
+    depends_on:
+      - mcp-filesystem
+      - mcp-fetch
+      - mcp-time
+
+  mcp-filesystem:
+    image: node:20-alpine
+    container_name: mcp-filesystem
+    working_dir: /work
+    command: >
+      sh -lc "npx -y supergateway
+      --stdio 'npx -y @modelcontextprotocol/server-filesystem /projects'
+      --port 8201"
+    volumes:
+      - ./fakecompanies:/projects:ro
+
+  mcp-fetch:
+    image: node:20-alpine
+    container_name: mcp-fetch
+    command: >
+      sh -lc "npx -y supergateway
+      --stdio 'npx -y @modelcontextprotocol/server-fetch'
+      --port 8202"
+
+  mcp-time:
+    image: node:20-alpine
+    container_name: mcp-time
+    command: >
+      sh -lc "npx -y supergateway
+      --stdio 'npx -y @modelcontextprotocol/server-time'
+      --port 8203"

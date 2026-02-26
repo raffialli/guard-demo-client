@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Settings, Shield } from 'lucide-react';
 import ChatWidget from '../components/ChatWidget';
 import LakeraOverlay from '../components/LakeraOverlay';
+import SecurityEvidenceWidget from '../components/SecurityEvidenceWidget';
 import { AppConfig } from '../types';
 import { apiService } from '../services/api';
 
@@ -125,6 +126,11 @@ const LandingPage: React.FC = () => {
               />
             </div>
           )}
+        </div>
+
+        {/* Main-page MCP security demo module */}
+        <div className="mt-12">
+          <SecurityEvidenceWidget compact />
         </div>
 
         {/* Features Section */}

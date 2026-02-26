@@ -58,3 +58,26 @@ docker run -it -p 3000:3000 vmummer/guard-demo
 ```
 
 On Linux, add `--add-host=host.docker.internal:host-gateway` if you need to reach ToolHive or other host services from inside the container.
+
+---
+
+## Demo MCP Stack (one command)
+
+For a quick SE-ready demo with bundled MCP servers (filesystem + memory + everything), use:
+
+```bash
+docker compose -f docker-compose.demo.yml up --build
+```
+
+This starts:
+- App frontend/backend
+- 3 demo MCP servers (no auth)
+
+On startup, the backend auto-seeds demo tools (when `DEMO_MCP_AUTOCONFIG=true`) so Tool Manager can immediately test/discover them.
+
+Access:
+- Demo: `http://localhost:3000`
+- Admin: `http://localhost:3000/admin`
+- API: `http://localhost:8000`
+
+If a demo tool does not appear as reachable, use Tool Manager test/discovery once the MCP containers finish npm startup.

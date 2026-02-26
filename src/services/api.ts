@@ -85,7 +85,7 @@ class ApiService {
   }
 
   // RAG endpoints
-  async uploadFile(file: File): Promise<{ message: string }> {
+  async uploadFile(file: File): Promise<{ message: string; filename?: string; result?: { chunks?: number; blocked_chunks?: number } }> {
     const formData = new FormData();
     formData.append('file', file);
 

@@ -11,6 +11,7 @@ import io
 import logging
 import sys
 from datetime import datetime
+import asyncio
 
 # Configure logging to prevent blocking I/O issues
 logging.basicConfig(
@@ -22,7 +23,7 @@ logging.basicConfig(
 )
 
 from sqlalchemy import text
-from .database import get_db, engine
+from .database import get_db, engine, SessionLocal
 from .models import Base, AppConfig, Tool, RagSource, MCPToolCapabilities, DemoPrompt
 from .schemas import (
     AppConfigResponse, AppConfigUpdate,
@@ -64,6 +65,54 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.on_event("startup")
+async def startup_seed_demo_tools():
+    """Optionally seed demo MCP tools for docker-compose demo stack."""
+    if os.getenv("DEMO_MCP_AUTOCONFIG", "false").lower() not in {"1", "true", "yes", "on"}:
+        return
+
+    demo_tools = [
+        {
+            "name": "filesystem_demo",
+            "description": "Demo MCP filesystem server",
+            "endpoint": os.getenv("MCP_FILESYSTEM_ENDPOINT", "http://mcp-filesystem:8201/sse"),
+            "type": "mcp",
+        },
+        {
+            "name": "fetch_demo",
+            "description": "Demo MCP fetch/http server",
+            "endpoint": os.getenv("MCP_FETCH_ENDPOINT", "http://mcp-fetch:8202/sse"),
+            "type": "mcp",
+        },
+        {
+            "name": "time_demo",
+            "description": "Demo MCP time utility server",
+            "endpoint": os.getenv("MCP_TIME_ENDPOINT", "http://mcp-time:8203/sse"),
+            "type": "mcp",
+        },
+    ]
+
+    db = SessionLocal()
+    try:
+        for tool in demo_tools:
+            existing = db.query(Tool).filter(Tool.name == tool["name"]).first()
+            if not existing:
+                db.add(Tool(
+                    name=tool["name"],
+                    description=tool["description"],
+                    endpoint=tool["endpoint"],
+                    type=tool["type"],
+                    enabled=True,
+                    config_json={"seeded_by": "demo_mcp_autoconfig"}
+                ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"⚠️ Demo MCP autoconfig seed failed: {e}")
+    finally:
+        db.close()
+
 
 @app.get("/")
 async def root():
@@ -762,24 +811,43 @@ async def test_tool(tool_id: int, db: Session = Depends(get_db)):
     lakera_blocking_mode = config.lakera_blocking_mode if config and config.lakera_enabled else True
     
     if tool.type in ["mcp", "http"]:
-        # For MCP tools, try to discover capabilities
-        try:
-            discovery_result = await discover_mcp_tool_capabilities_sync({
-                "name": tool.name,
-                "endpoint": tool.endpoint
-            }, lakera_api_key=lakera_api_key, lakera_project_id=lakera_project_id, lakera_blocking_mode=lakera_blocking_mode)
-            # Store the discovered capabilities
-            await store_capabilities(tool.id, tool.name, discovery_result, db)
-            return {
-                "status": "success",
-                "message": f"MCP tool {tool.name} discovery completed",
-                "discovery": discovery_result
-            }
-        except Exception as e:
-            return {
-                "status": "error",
-                "message": f"MCP tool discovery failed: {str(e)}"
-            }
+        # For MCP tools, try to discover capabilities (with light retry for startup races)
+        attempts = 3
+        last_error = None
+        for attempt in range(1, attempts + 1):
+            try:
+                discovery_result = await discover_mcp_tool_capabilities_sync({
+                    "name": tool.name,
+                    "endpoint": tool.endpoint
+                }, lakera_api_key=lakera_api_key, lakera_project_id=lakera_project_id, lakera_blocking_mode=lakera_blocking_mode)
+
+                # If discovery returned an explicit MCP connection error, retry briefly
+                if discovery_result.get("status") == "error" and "MCP connection failed" in str(discovery_result.get("error", "")) and attempt < attempts:
+                    last_error = discovery_result.get("error")
+                    await asyncio.sleep(1.5 * attempt)
+                    continue
+
+                # Store the discovered capabilities
+                await store_capabilities(tool.id, tool.name, discovery_result, db)
+                return {
+                    "status": "success",
+                    "message": f"MCP tool {tool.name} discovery completed",
+                    "discovery": discovery_result
+                }
+            except Exception as e:
+                last_error = str(e)
+                if attempt < attempts:
+                    await asyncio.sleep(1.5 * attempt)
+                else:
+                    return {
+                        "status": "error",
+                        "message": f"MCP tool discovery failed after {attempts} attempts: {last_error}"
+                    }
+
+        return {
+            "status": "error",
+            "message": f"MCP tool discovery failed: {last_error}"
+        }
     else:
         # For HTTP tools, test basic connectivity
         import httpx

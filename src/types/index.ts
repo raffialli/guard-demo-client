@@ -104,6 +104,9 @@ export interface SecurityEvent {
   verdict: 'allow' | 'flag' | 'block' | 'error' | string;
   action: string;
   reasons: string[];
+  marker_matches?: string[];
+  evidence_source?: string;
+  evidence_excerpt?: string;
   moderation_source?: string;
   timeline: Array<{ step: string; status: string; message: string; details?: any }>;
 }

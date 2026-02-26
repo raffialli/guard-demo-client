@@ -316,6 +316,25 @@ const ToolManager: React.FC = () => {
               </div>
             )}
 
+            {(latestSecurityEvent.marker_matches?.length || latestSecurityEvent.evidence_excerpt) ? (
+              <div className="mt-3 p-2 rounded border border-red-200 bg-red-50">
+                <p className="text-xs font-medium text-red-800">Detection evidence</p>
+                {latestSecurityEvent.marker_matches?.length ? (
+                  <p className="text-xs text-red-700 mt-1">
+                    Matched pattern(s): {latestSecurityEvent.marker_matches.join(', ')}
+                  </p>
+                ) : null}
+                {latestSecurityEvent.evidence_source ? (
+                  <p className="text-xs text-red-700 mt-1">Source: {latestSecurityEvent.evidence_source}</p>
+                ) : null}
+                {latestSecurityEvent.evidence_excerpt ? (
+                  <pre className="mt-2 text-xs whitespace-pre-wrap text-red-900 bg-white border border-red-100 p-2 rounded max-h-32 overflow-auto">
+                    {latestSecurityEvent.evidence_excerpt}
+                  </pre>
+                ) : null}
+              </div>
+            ) : null}
+
             <div className="mt-3">
               <p className="text-xs font-medium text-gray-700 mb-1">Timeline</p>
               <ul className="space-y-1">

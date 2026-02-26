@@ -902,7 +902,7 @@ async def get_tool_capabilities(tool_id: int, db: Session = Depends(get_db)):
         }
 
 
-def _is_malicious_fallback(content: str) -> bool:
+def _fallback_marker_matches(content: str) -> List[str]:
     markers = [
         "ignore previous instructions",
         "exfiltrate",
@@ -912,7 +912,7 @@ def _is_malicious_fallback(content: str) -> bool:
         "disable guard",
     ]
     text = (content or "").lower()
-    return any(m in text for m in markers)
+    return [m for m in markers if m in text]
 
 
 def _append_security_event(event: Dict[str, Any]) -> None:
@@ -962,6 +962,7 @@ async def run_security_scenario(payload: Dict[str, Any], db: Session = Depends(g
 
     flagged = False
     reasons: List[str] = []
+    marker_matches: List[str] = []
     moderation_source = "fallback"
 
     if guard_enabled and config and config.lakera_api_key:
@@ -981,14 +982,15 @@ async def run_security_scenario(payload: Dict[str, Any], db: Session = Depends(g
             "details": {"source": moderation_source, "breakdown": reasons}
         })
     else:
-        flagged = _is_malicious_fallback(tool_content)
+        marker_matches = _fallback_marker_matches(tool_content)
+        flagged = len(marker_matches) > 0
         if flagged:
             reasons = ["prompt_injection_pattern_detected"]
         timeline.append({
             "step": "moderated",
             "status": "ok",
             "message": f"Fallback moderation complete (flagged={flagged})",
-            "details": {"source": moderation_source, "breakdown": reasons}
+            "details": {"source": moderation_source, "breakdown": reasons, "marker_matches": marker_matches}
         })
 
     if not guard_enabled:
@@ -1011,6 +1013,8 @@ async def run_security_scenario(payload: Dict[str, Any], db: Session = Depends(g
         "details": {"verdict": verdict}
     })
 
+    evidence_excerpt = tool_content[:220] if flagged else ""
+
     event = {
         "id": f"evt_{datetime.utcnow().timestamp():.6f}",
         "timestamp": datetime.utcnow().isoformat(),
@@ -1022,6 +1026,9 @@ async def run_security_scenario(payload: Dict[str, Any], db: Session = Depends(g
         "verdict": verdict,
         "action": action,
         "reasons": reasons,
+        "marker_matches": marker_matches,
+        "evidence_source": "tool_response",
+        "evidence_excerpt": evidence_excerpt,
         "moderation_source": moderation_source,
         "timeline": timeline
     }

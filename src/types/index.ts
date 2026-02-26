@@ -93,6 +93,21 @@ export interface Tool {
   updated_at: string;
 }
 
+export interface SecurityEvent {
+  id: string;
+  timestamp: string;
+  tool_id: number;
+  tool_name: string;
+  scenario: 'benign' | 'malicious' | string;
+  guard_enabled: boolean;
+  blocking_mode: boolean;
+  verdict: 'allow' | 'flag' | 'block' | 'error' | string;
+  action: string;
+  reasons: string[];
+  moderation_source?: string;
+  timeline: Array<{ step: string; status: string; message: string; details?: any }>;
+}
+
 export interface ToolCreate {
   name: string;
   description?: string;

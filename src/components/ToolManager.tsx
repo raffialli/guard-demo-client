@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Settings, Play, Trash2, Search, ShieldCheck, ShieldAlert, Activity, ChevronDown, ChevronUp } from 'lucide-react';
-import { Tool, ToolCreate, AppConfig } from '../types';
+import { Tool, ToolCreate, AppConfig, SecurityEvent } from '../types';
 import { apiService } from '../services/api';
 
 const ToolManager: React.FC = () => {
@@ -14,6 +14,10 @@ const ToolManager: React.FC = () => {
   const [expandedTools, setExpandedTools] = useState<Record<number, boolean>>({});
   const [showRawResult, setShowRawResult] = useState<Record<number, boolean>>({});
   const [appConfig, setAppConfig] = useState<AppConfig | null>(null);
+  const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
+  const [scenarioToolId, setScenarioToolId] = useState<number | null>(null);
+  const [scenarioGuardEnabled, setScenarioGuardEnabled] = useState<boolean>(true);
+  const [runningScenario, setRunningScenario] = useState<'' | 'benign' | 'malicious'>('');
 
   const [newTool, setNewTool] = useState<ToolCreate>({
     name: '',
@@ -27,6 +31,7 @@ const ToolManager: React.FC = () => {
   useEffect(() => {
     loadTools();
     loadConfig();
+    loadSecurityEvents();
   }, []);
 
   const loadTools = async () => {
@@ -45,8 +50,18 @@ const ToolManager: React.FC = () => {
     try {
       const config = await apiService.getConfig();
       setAppConfig(config);
+      setScenarioGuardEnabled(!!config.lakera_enabled);
     } catch (error) {
       console.error('Failed to load config:', error);
+    }
+  };
+
+  const loadSecurityEvents = async () => {
+    try {
+      const result = await apiService.getSecurityEvents(15);
+      setSecurityEvents(result.events || []);
+    } catch (error) {
+      console.error('Failed to load security events:', error);
     }
   };
 
@@ -110,12 +125,31 @@ const ToolManager: React.FC = () => {
     }
   };
 
+  const handleRunScenario = async (scenario: 'benign' | 'malicious') => {
+    if (!scenarioToolId) return;
+    setRunningScenario(scenario);
+    try {
+      await apiService.runSecurityScenario(scenarioToolId, scenario, scenarioGuardEnabled);
+      await loadSecurityEvents();
+    } catch (error) {
+      console.error('Failed to run security scenario:', error);
+    } finally {
+      setRunningScenario('');
+    }
+  };
+
   const filteredTools = tools.filter(tool =>
     tool.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     tool.description?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const mcpTools = filteredTools.filter(t => t.type === 'mcp');
+
+  useEffect(() => {
+    if (!scenarioToolId && mcpTools.length > 0) {
+      setScenarioToolId(mcpTools[0].id);
+    }
+  }, [mcpTools, scenarioToolId]);
 
   const getDiscoveredTools = (tool: Tool): any[] => {
     const stored = tool.mcp_capabilities?.discovery_results?.tools_list_params_0?.response?.result?.tools;
@@ -138,6 +172,8 @@ const ToolManager: React.FC = () => {
     if (tool.mcp_capabilities?.last_discovered) return 'healthy';
     return 'unknown';
   };
+
+  const latestSecurityEvent = securityEvents[0];
 
   return (
     <div className="space-y-6">
@@ -202,6 +238,96 @@ const ToolManager: React.FC = () => {
           </p>
           <p className="text-xs text-gray-500 mt-1">From latest capability discovery</p>
         </div>
+      </div>
+
+      {/* Security evidence runner (Phase 2A MVP) */}
+      <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-900">Security Evidence Runner</h3>
+          <span className="text-xs text-gray-500">Run benign vs malicious scenarios</span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">MCP server</label>
+            <select
+              value={scenarioToolId || ''}
+              onChange={(e) => setScenarioToolId(Number(e.target.value))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            >
+              {mcpTools.map((tool) => (
+                <option key={`scenario-tool-${tool.id}`} value={tool.id}>{tool.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-end">
+            <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={scenarioGuardEnabled}
+                onChange={(e) => setScenarioGuardEnabled(e.target.checked)}
+                className="h-4 w-4 text-primary-600 border-gray-300 rounded"
+              />
+              Guard ON for run
+            </label>
+          </div>
+
+          <div className="flex items-end gap-2">
+            <button
+              onClick={() => handleRunScenario('benign')}
+              disabled={!scenarioToolId || runningScenario !== ''}
+              className="px-3 py-2 text-sm rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+            >
+              {runningScenario === 'benign' ? 'Running...' : 'Run Benign'}
+            </button>
+            <button
+              onClick={() => handleRunScenario('malicious')}
+              disabled={!scenarioToolId || runningScenario !== ''}
+              className="px-3 py-2 text-sm rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              {runningScenario === 'malicious' ? 'Running...' : 'Run Malicious'}
+            </button>
+          </div>
+        </div>
+
+        {latestSecurityEvent && (
+          <div className="border border-gray-200 rounded-lg p-3 bg-gray-50">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-medium text-gray-900">Latest outcome</p>
+              <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                latestSecurityEvent.verdict === 'allow'
+                  ? 'bg-green-100 text-green-800'
+                  : latestSecurityEvent.verdict === 'block'
+                  ? 'bg-red-100 text-red-800'
+                  : 'bg-yellow-100 text-yellow-800'
+              }`}>
+                {latestSecurityEvent.verdict.toUpperCase()}
+              </span>
+            </div>
+            <p className="text-sm text-gray-700">
+              <span className="font-medium">{latestSecurityEvent.tool_name}</span> · scenario: <span className="font-medium">{latestSecurityEvent.scenario}</span> · action: <span className="font-medium">{latestSecurityEvent.action}</span>
+            </p>
+            {latestSecurityEvent.reasons?.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {latestSecurityEvent.reasons.map((r, i) => (
+                  <span key={`reason-${i}`} className="text-xs px-2 py-1 rounded bg-orange-100 text-orange-800">{r}</span>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-3">
+              <p className="text-xs font-medium text-gray-700 mb-1">Timeline</p>
+              <ul className="space-y-1">
+                {latestSecurityEvent.timeline.map((t, i) => (
+                  <li key={`timeline-${i}`} className="text-xs text-gray-700">
+                    <span className="font-medium">{t.step}</span>: {t.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Discovered tools by MCP server (demo-friendly list) */}

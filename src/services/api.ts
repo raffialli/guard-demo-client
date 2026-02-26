@@ -9,6 +9,7 @@ import {
   ToolCreate,
   ToolUpdate,
   LakeraResult,
+  SecurityEvent,
   DemoPrompt,
   DemoPromptCreate,
   DemoPromptUpdate,
@@ -151,6 +152,18 @@ class ApiService {
     return this.request(`/tools/test/${id}`, {
       method: 'POST',
       body: JSON.stringify(parameters),
+    });
+  }
+
+  // Security evidence endpoints
+  async getSecurityEvents(limit: number = 20): Promise<{ events: SecurityEvent[] }> {
+    return this.request<{ events: SecurityEvent[] }>(`/security/events?limit=${limit}`);
+  }
+
+  async runSecurityScenario(toolId: number, scenario: 'benign' | 'malicious', guardEnabled: boolean): Promise<{ status: string; message: string; event: SecurityEvent }> {
+    return this.request<{ status: string; message: string; event: SecurityEvent }>(`/security/scenarios/run`, {
+      method: 'POST',
+      body: JSON.stringify({ tool_id: toolId, scenario, guard_enabled: guardEnabled }),
     });
   }
 
